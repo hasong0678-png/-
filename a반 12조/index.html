@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="referrer" content="no-referrer">
+    <title>전기 역사 박물관 & 시퀀스 제어관</title>
+    <style>
+        /* 1. 기본 폰트 및 초기화 */
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+            background-color: #f5f2ed;
+            color: #333; overflow: hidden;
+        }
+
+        /* 2. 글로벌 상단 탭 네비게이션 */
+        .global-tabs {
+            position: fixed; top: 0; left: 0; width: 100%; height: 50px;
+            background: #2c2a27; display: flex; justify-content: center; align-items: center; z-index: 2000;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        .global-tab {
+            color: #bcaaa4; text-decoration: none; padding: 0 25px; font-weight: bold; font-size: 1.1rem;
+            cursor: pointer; transition: 0.3s; border-right: 1px solid #4a453f; height: 100%;
+            display: flex; align-items: center; justify-content: center; letter-spacing: 1px;
+        }
+        .global-tab:last-child { border-right: none; }
+        .global-tab:hover { color: #d4a017; background: rgba(255,255,255,0.05); }
+        .global-tab.active { color: #d4a017; background: #1a1816; border-bottom: 3px solid #d4a017; }
+
+        /* 3. 뷰 컨테이너 */
+        .view-container {
+            position: absolute; top: 50px;
+            left: 0; width: 100%; height: calc(100vh - 50px);
+            overflow-y: auto; scroll-snap-type: y mandatory; scroll-behavior: smooth;
+            display: none; opacity: 0; transition: opacity 0.5s ease-in-out;
+        }
+        .view-container.active { display: block; opacity: 1; }
+
+        /* [메인 로비 뷰 스타일] */
+        #view-lobby {
+            background-image: radial-gradient(circle at center, #3d352b 0%, #1a1614 100%);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            scroll-snap-type: none;
+        }
+        .lobby-title { text-align: center; color: #d4a017; margin-bottom: 50px; animation: fadeIn 2s; }
+        .lobby-title h1 { font-size: 4rem; letter-spacing: 12px; margin: 0; font-family: 'Georgia', serif; text-shadow: 2px 2px 5px rgba(0,0,0,0.8); }
+        .lobby-title p { color: #bcaaa4; font-size: 1.3rem; margin-top: 15px; }
+        
+        .door-container { display: flex; gap: 40px; flex-wrap: wrap; justify-content: center; }
+        .door-card {
+            background: #f5f2ed; width: 340px; padding: 50px 30px; border-radius: 10px; text-align: center;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.5); cursor: pointer; transition: 0.4s;
+            border: 5px solid #8b5a2b; position: relative; overflow: hidden;
+        }
+        .door-card::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 10px; background: #8b5a2b; }
+        .door-card:hover { transform: translateY(-10px); box-shadow: 0 20px 40px rgba(212,160,23,0.3); border-color: #d4a017; }
+        .door-card h2 { color: #5d4037; font-size: 1.9rem; margin-bottom: 15px; border: none; padding: 0; }
+        .door-card p { color: #666; line-height: 1.7; font-size: 1.1rem; }
+        .door-btn { display: inline-block; margin-top: 25px; padding: 14px 28px; background: #8b5a2b; color: white; border-radius: 30px; font-weight: bold; font-size:1.1rem; transition: 0.3s; }
+        .door-card:hover .door-btn { background: #d4a017; }
+
+        /* [전시관 공통 스타일 (타임라인 늘리기 및 글자 확대)] */
+        .timeline-container {
+            position: fixed; top: 50px; left: 0; width: 100%; height: 120px;
+            background: rgba(245, 242, 237, 0.95); display: flex; align-items: center; justify-content: flex-start; 
+            z-index: 1000; border-bottom: 1px solid #d1ccc0; overflow-x: auto; scroll-behavior: smooth;
+            -ms-overflow-style: none; scrollbar-width: none;
+        }
+        .timeline-container::-webkit-scrollbar { display: none; }
+        .timeline-center { justify-content: center; }
+        
+        #view-history .horizontal-line { min-width: 2400px; }
+        #view-sequence .horizontal-line { min-width: 1000px; width: 90%; }
+        
+        .horizontal-line { position: relative; height: 2px; background-color: #8b5a2b; display: flex; justify-content: space-around; align-items: center; padding: 0 100px; }
+        .nav-item { position: relative; text-decoration: none; color: #5d4037; font-weight: bold; font-size: 0.95rem; transition: 0.3s; text-align: center; cursor: pointer; user-select: none; line-height: 1.4; white-space: nowrap; }
+        .nav-item.up { transform: translateY(-30px); } .nav-item.down { transform: translateY(30px); }
+        .nav-item::after { content: ''; position: absolute; left: 50%; width: 10px; height: 10px; background-color: #8b5a2b; border-radius: 50%; transform: translateX(-50%); transition: 0.3s; }
+        .nav-item.up::after { bottom: -40px; } .nav-item.down::after { top: -40px; }
+        .nav-item.active { color: #d4a017; font-weight: 900; transform: scale(1.15); }
+        .nav-item.active.up { transform: translateY(-30px) scale(1.15); }
+        .nav-item.active.down { transform: translateY(30px) scale(1.15); }
+        .nav-item.active::after { background-color: #d4a017; box-shadow: 0 0 12px #d4a017; }
+
+        /* [배경음악 컨트롤러 스타일 (왼쪽 아래)] */
+        .audio-player-wrapper {
+            position: fixed; bottom: 30px; left: 30px;
+            background: rgba(44, 42, 39, 0.8); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+            padding: 12px 24px; border-radius: 30px; display: flex; align-items: center; gap: 15px;
+            z-index: 2000; border: 1px solid rgba(212, 160, 23, 0.5); box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            transition: all 0.3s ease;
+        }
+        .audio-player-wrapper:hover { background: rgba(44, 42, 39, 0.95); border-color: rgba(212, 160, 23, 0.9); }
+        .audio-btn { background: none; border: none; color: #d4a017; font-size: 1.4rem; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; transition: transform 0.2s, text-shadow 0.2s; outline: none; }
+        .audio-btn:hover { transform: scale(1.15); text-shadow: 0 0 10px rgba(212, 160, 23, 0.8); }
+        .volume-control { display: flex; align-items: center; gap: 10px; }
+        input[type="range"] { -webkit-appearance: none; width: 80px; background: transparent; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #d4a017; cursor: pointer; margin-top: -6px; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
+        input[type="range"]::-webkit-slider-runnable-track { width: 100%; height: 5px; cursor: pointer; background: #7a6a58; border-radius: 3px; }
+        input[type="range"]:focus { outline: none; }
+
+        /* 전시 컨텐츠 기본 프레임 */
+        .exhibit-hall { 
+            height: calc(100vh - 50px); width: 100%; scroll-snap-align: start; 
+            display: flex; justify-content: center; align-items: center; 
+            box-sizing: border-box; padding-top: 120px;
+        }
+        
+        .hall-content {
+            background: #ffffff; padding: 50px 70px; border: 1px solid #e0ddd5; max-width: 1250px; width: 90%;
+            box-shadow: 0 15px 45px rgba(0,0,0,0.08); position: relative; border-radius: 8px;
+            transition: all 0.9s cubic-bezier(0.25, 1, 0.5, 1); transform: scale(0.88); opacity: 0.3;
+            max-height: 82vh; overflow-y: auto;
+        }
+        .hall-content.active { transform: scale(1); opacity: 1; }
+
+        /* 역사관 이미지 레이아웃 전용 클래스 */
+        .hall-content.flex-layout {
+            display: flex; flex-direction: row; gap: 50px; align-items: flex-start;
+        }
+        .hall-image {
+            flex: 0 0 300px; height: 350px; border-radius: 8px; overflow: hidden;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.25); border: 5px solid #8b5a2b;
+            background-color: #e5dfd5; display: flex; justify-content: center; align-items: center;
+        }
+        .hall-image img {
+            width: 100%; height: 100%; object-fit: cover; display: block;
+            filter: sepia(20%) contrast(105%);
+        }
+        .hall-text { flex: 1; }
+        
+        .intro-content { text-align: center; animation: fadeIn 2s ease-in; }
+        .intro-content h1 { font-size: 4.5rem; color: #8b5a2b; margin: 0; letter-spacing: 10px; font-family: 'Georgia', serif; }
+        .intro-content p { font-size: 1.4rem; color: #5d4037; margin-top: 25px; line-height: 1.8; font-weight: bold; }
+
+        h2 { color: #8b5a2b; font-size: 2.5rem; margin: 12px 0; border-bottom: 2px solid #f5f2ed; padding-bottom: 12px; }
+        .year-tag { color: #bcaaa4; font-size: 1.2rem; font-weight: bold; letter-spacing: 2px; }
+        .subtitle { font-weight: bold; color: #5d4037; margin-bottom: 20px; display: block; font-size: 1.3rem; }
+        .text-box { line-height: 1.9; font-size: 1.15rem; color: #444; margin-bottom: 30px; text-align: justify; }
+
+        .expert-info { background-color: #fcfaf7; border-left: 6px solid #8b5a2b; padding: 25px 30px; font-size: 1.05rem; }
+        .expert-info ul { list-style: none; padding: 0; margin: 0; }
+        .expert-info li { margin-bottom: 12px; line-height: 1.7; display: flex; align-items: flex-start; }
+        .expert-info strong { color: #8b5a2b; min-width: 160px; display: inline-block; flex-shrink: 0; }
+        .formula { font-family: "Times New Roman", serif; font-style: italic; font-weight: bold; color: #2c3e50; background: #eeeae3; padding: 3px 8px; border-radius: 4px; }
+
+        /* [시퀀스관 전용 스타일 - 회로도 높이 제한 및 폭 최적화] */
+        .seq-content { max-width: 1600px; display: flex; flex-direction: row; gap: 60px; align-items: center; }
+        .seq-circuit { flex: 1.6; display: flex; flex-direction: column; align-items: center; }
+        .seq-desc { flex: 1; text-align: left; }
+
+        .seq-circuit svg { 
+            background-color: #2b231d; border: 8px solid #4a3e2e; border-radius: 6px; 
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.8), 0 10px 20px rgba(0,0,0,0.1); 
+            width: 100%; max-width: 650px; 
+            height: auto; max-height: 52vh;
+        }
+        
+        /* 인터록 회로는 폭이 더 넓으므로 개별적으로 사이즈업 유지 */
+        #s-2 .seq-circuit svg { max-width: 900px; }
+
+        .wire { stroke: #6b5a49; stroke-width: 3; fill: none; transition: stroke 0.2s, filter 0.2s; }
+        .wire.active { stroke: #ffb74d; stroke-width: 4; filter: drop-shadow(0 0 6px rgba(255,183,77,0.8)); }
+        .component-box { fill: #3e3228; stroke: #6b5a49; stroke-width: 2; transition: all 0.2s; }
+        .component-box.active { stroke: #d4a017; fill: #5c4727; filter: drop-shadow(0 0 8px rgba(212,160,23,0.5)); }
+        .lamp { fill: #1c1815; stroke: #44382c; stroke-width: 3; transition: all 0.3s; }
+        .lamp.green.active { stroke: #81c784; fill: #2e4d30; filter: drop-shadow(0 0 15px #81c784); }
+        .lamp.red.active { stroke: #e57373; fill: #5c2424; filter: drop-shadow(0 0 15px #e57373); }
+        .contact { stroke: #9c8a76; stroke-width: 4; transition: stroke 0.1s; }
+        .contact.active { stroke: #ffb74d; }
+        .contact-point { fill: #8a7863; }
+        text.svg-text { fill: #d1c7b8; font-size: 16px; font-weight: bold; user-select: none; font-family: 'Malgun Gothic', sans-serif; }
+
+        .controls { display: flex; gap: 20px; justify-content: center; width: 100%; margin-top: 30px; }
+        .btn-sim { padding: 16px 32px; font-size: 1.1rem; font-weight: bold; border-radius: 30px; cursor: pointer; transition: all 0.2s; border: none; font-family: 'Noto Sans KR', sans-serif; }
+        .btn-start { background-color: #8b5a2b; color: white; box-shadow: 0 4px 10px rgba(139,90,43,0.3); } 
+        .btn-start-alt { background-color: #5d4037; color: white; box-shadow: 0 4px 10px rgba(93,64,55,0.3); } 
+        .btn-stop { background-color: #c0392b; color: white; box-shadow: 0 4px 10px rgba(192,57,43,0.3); }
+        .btn-sim:active { transform: translateY(3px); box-shadow: none; }
+
+        .seq-desc h4 { color: #8b5a2b; margin: 15px 0 5px 0; font-size: 1.25rem; }
+        .seq-desc ul { margin: 0; padding-left: 20px; color: #444; line-height: 1.8; font-size:1.1rem;}
+        .seq-desc .highlight { font-weight: bold; color: #d4a017; background: rgba(212,160,23,0.1); padding: 2px 5px; border-radius: 3px; }
+
+        /* [푸터 및 버튼] */
+        .footer-hall { background-color: #2c2a27; color: #e0ddd5; }
+        .footer-content { text-align: center; max-width: 900px; width: 90%; }
+        .footer-content h2 { color: #d4a017 !important; border-bottom: none !important; font-size: 3rem; }
+        
+        .quiz-section { background: rgba(255, 255, 255, 0.07); border: 1px dashed #d4a017; padding: 40px; border-radius: 12px; margin: 30px 0; text-align: left; }
+        .quiz-question { font-weight: bold; color: #d4a017; margin-bottom: 20px; font-size: 1.3rem; min-height: 3.5rem; }
+        .quiz-options { display: flex; gap: 15px; flex-wrap: wrap; }
+        .quiz-btn { padding: 12px 25px; background: transparent; border: 1px solid #d4a017; color: #d4a017; cursor: pointer; border-radius: 25px; transition: 0.3s; font-size: 1.1rem; font-weight: bold; }
+        .quiz-btn:hover { background: #d4a017; color: #fff; }
+        #quiz-feedback { margin-top: 20px; font-weight: bold; font-size: 1.2rem; min-height: 1.5rem; }
+
+        .btn-group { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; margin-top: 40px;}
+        .action-btn { display: inline-block; padding: 16px 40px; background-color: #8b5a2b; color: #fff; text-decoration: none; font-weight: bold; border-radius: 35px; transition: 0.3s; font-size: 1.1rem; border: none; cursor: pointer; }
+        .action-btn.secondary { background-color: #5d4037; }
+        .action-btn:hover { background-color: #d4a017; transform: translateY(-4px); }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        @media (max-width: 1024px) {
+            .hall-content.flex-layout { flex-direction: column; }
+            .hall-image { flex: 0 0 auto; width: 220px; height: 250px; margin: 0 auto; }
+            .seq-content { flex-direction: column; max-height: 85vh; padding: 20px; }
+            .seq-circuit svg { max-height: 30vh; }
+            .audio-player-wrapper { bottom: 15px; left: 15px; padding: 8px 15px; }
+        }
+    </style>
+</head>
+<body>
+
+    <audio id="bgm" preload="auto">
+        <source src="Hall of Giants.mp3" type="audio/mpeg">
+    </audio>
+
+    <div class="audio-player-wrapper">
+        <button id="playPauseBtn" class="audio-btn" title="재생/일시정지">▶</button>
+        <div class="volume-control">
+            <button id="muteBtn" class="audio-btn" title="음소거">🔊</button>
+            <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.15" title="볼륨 조절">
+        </div>
+    </div>
+
+    <nav class="global-tabs">
+        <a class="global-tab active" id="tab-lobby" onclick="switchView('lobby')">🏛️ 메인 로비</a>
+        <a class="global-tab" id="tab-history" onclick="switchView('history')">📖 제1관: 전기의 역사관</a>
+        <a class="global-tab" id="tab-sequence" onclick="switchView('sequence')">⚙️ 제2관: 시퀀스 제어 체험관</a>
+    </nav>
+
+    <div id="view-lobby" class="view-container active">
+        <div class="lobby-title">
+            <h1>THE MUSEUM OF ELECTRICITY</h1>
+            <p>전기의 위대한 역사와 자동화의 꽃, 시퀀스 제어</p>
+        </div>
+        <div class="door-container">
+            <div class="door-card" onclick="switchView('history')">
+                <h2>제 1전시관<br>전기의 역사관</h2>
+                <p>고대 그리스 탈레스의 관찰부터 현대 반도체 혁명까지. 보이지 않는 에너지를 다스려온 위대한 과학자들의 학문적 발자취를 따라갑니다.</p>
+                <div class="door-btn">입장하기 →</div>
+            </div>
+            <div class="door-card" onclick="switchView('sequence')">
+                <h2>제 2전시관<br>시퀀스 제어 체험관</h2>
+                <p>기계적 논리의 아름다움. 릴레이 제어 회로를 직접 조작하며 자기유지부터 플리커까지 자동화의 기본 원리를 체험합니다.</p>
+                <div class="door-btn">입장하기 →</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-history" class="view-container">
+        <div class="timeline-container">
+            <div class="horizontal-line" style="min-width: 2400px;">
+                <a href="#h-intro" class="nav-item up active">입구</a>
+                <a href="#h-thales" class="nav-item down">BC 600<br>탈레스</a>
+                <a href="#h-gilbert" class="nav-item up">1600<br>길버트</a>
+                <a href="#h-guericke" class="nav-item down">1660<br>게리케</a>
+                <a href="#h-gray" class="nav-item up">1729<br>그레이</a>
+                <a href="#h-franklin" class="nav-item down">1752<br>프랭클린</a>
+                <a href="#h-galvani" class="nav-item up">1780<br>갈바니</a>
+                <a href="#h-volta" class="nav-item down">1800<br>볼타</a>
+                <a href="#h-oersted" class="nav-item up">1820<br>외르스테드</a>
+                <a href="#h-ampere" class="nav-item down">1827<br>앙페르</a>
+                <a href="#h-faraday" class="nav-item up">1831<br>패러데이</a>
+                <a href="#h-maxwell" class="nav-item down">1864<br>맥스웰</a>
+                <a href="#h-edison" class="nav-item up">1879<br>에디슨</a>
+                <a href="#h-tesla" class="nav-item down">1887<br>테슬라</a>
+                <a href="#h-hertz" class="nav-item up">1887<br>헤르츠</a>
+                <a href="#h-modern" class="nav-item down">1947<br>반도체</a>
+                <a href="#h-footer" class="nav-item up">출구</a>
+            </div>
+        </div>
+
+        <section id="h-intro" class="exhibit-hall">
+            <div class="intro-content">
+                <h1>HISTORY OF ELECTRICITY</h1>
+                <p>자연의 경이로움에서 현대 문명의 동력이 되기까지,<br>인류의 삶을 뒤바꾼 전기와 전자기학의 위대한 역사를 기록합니다.</p>
+            </div>
+        </section>
+        
+        <section id="h-thales" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="image/960px-Illustrerad_Verldshistoria_band_I_Ill_107.jpg" alt="탈레스">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">BC 600경</span>
+                    <h2>밀레토스의 탈레스 (Thales)</h2>
+                    <span class="subtitle">"전기학의 가장 오래된 뿌리, 호박의 마찰"</span>
+                    <div class="text-box">고대 그리스의 철학자 탈레스는 호박(Amber)을 모피로 문지르면 깃털이나 가벼운 물질이 달라붙는 현상을 관찰했습니다. 비록 그는 이 끌림을 호박 속에 깃든 '영혼'의 작용이라고 믿었지만, 자연 현상을 단순히 신화로 치부하지 않고 관찰하려 했다는 점에서 큰 의의가 있습니다. 이는 번개나 정전기를 물질 고유의 성질로 이해하려 한 최초의 과학적 시도로 평가받습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>역사적 어원</strong><span>전기를 뜻하는 영단어 'Electricity'는 호박을 의미하는 그리스어 'Elektron'에서 유래했습니다.</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-gilbert" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="https://commons.wikimedia.org/wiki/Special:FilePath/William_Gilbert.jpg?width=300" alt="윌리엄 길버트">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1600년</span>
+                    <h2>윌리엄 길버트 (William Gilbert)</h2>
+                    <span class="subtitle">"자석학의 아버지이자 근대 전자기학의 선구자"</span>
+                    <div class="text-box">엘리자베스 1세의 주치의였던 길버트는 명저 [자석에 관하여(De Magnete)]를 통해 지구가 하나의 거대한 자석임을 주장하며 나침반의 원리를 과학적으로 규명했습니다. 또한 탈레스의 호박 외에도 유리나 유황 등 다른 물질에서도 마찰에 의해 힘이 발생함을 실험으로 증명했습니다. 특히 그는 호박의 정전기적 끌림과 자석의 자기적 끌림이 근본적으로 다른 현상임을 인류 최초로 명확히 구분해 냈습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>주요 공헌</strong><span>마찰로 발생하는 힘을 'Electricus(전기적)'라고 명명하여 학술적 용어를 확립했습니다.</span></li>
+                            <li><strong>실험 기구</strong><span>회전하는 금속 바늘을 이용한 전기 검출기 '베르소리움(Versorium)'을 발명했습니다.</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-guericke" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="image/lossy-page1-960px-Anselmus-van-Hulle-Hommes-illustres_MG_0539.tif.jpg" alt="오토 폰 게리케">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1660년경</span>
+                    <h2>오토 폰 게리케 (Otto von Guericke)</h2>
+                    <span class="subtitle">"최초의 정전기 발생 장치 발명"</span>
+                    <div class="text-box">마그데부르크의 시장이자 과학자였던 게리케는 유황을 녹여 만든 공을 회전시키며 마찰을 가해 강력한 정전기를 발생시키는 장치를 고안했습니다. 이것은 인류 최초의 인공적인 '발전기(마찰 기전기)' 형태였습니다. 그는 이 실험을 통해 정전기가 찌릿하는 소리를 내며 불꽃을 일으키는 것을 관찰했고, 이 현상이 하늘의 번개와 본질적으로 같을 수 있다는 획기적인 추론을 남겼습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>발견의 의의</strong><span>정전기적 인력뿐만 아니라 물체가 서로 밀어내는 '반발력'도 존재함을 실험으로 보였습니다.</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-gray" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="image/스크린샷 2026-04-16 184603.png" alt="스티븐 그레이 실험">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1729년</span>
+                    <h2>스티븐 그레이 (Stephen Gray)</h2>
+                    <span class="subtitle">"전기가 흐르는 길, 도체와 절연체의 발견"</span>
+                    <div class="text-box">그레이는 전기가 물체에 멈춰 있는 것만이 아니라, 특정한 물질을 통해서는 먼 곳까지 흐르고 어떤 물질에서는 막힌다는 사실을 발견했습니다. 그는 공중에 비단실로 매달린 소년(Flying Boy 실험)에게 전기를 전달하거나 200m가 넘는 마끈을 이용하여 전기를 먼 곳으로 보내는 실험에 성공했습니다. 이는 전기가 단순히 국소적인 정전기가 아니라 공간을 넘어 정보나 에너지를 전달할 수 있는 '흐름'의 성질을 가졌음을 증명한 중대한 사건이었습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>도체와 절연체</strong><span>금속이나 젖은 실은 전기를 잘 전달(도체)하지만, 비단실이나 유리는 막는다(절연체)는 성질을 명확히 분류했습니다.</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-franklin" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="https://commons.wikimedia.org/wiki/Special:FilePath/BenFranklinDuplessis.jpg?width=300" alt="벤자민 프랭클린">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1752년</span>
+                    <h2>벤자민 프랭클린 (Benjamin Franklin)</h2>
+                    <span class="subtitle">"하늘의 번개를 과학의 영역으로 끌어내리다"</span>
+                    <div class="text-box">프랭클린은 뇌우가 치는 날 연을 날려 번개가 구름 속에 축적된 거대한 정전기 방전 현상이라는 것을 실증했습니다. 그는 구름의 대전된 전하를 연줄을 통해 모아 라이덴병에 저장함으로써 번개와 정전기가 동일한 에너지임을 증명했습니다. 이를 바탕으로 벼락으로부터 건물을 보호하는 '피뢰침'을 발명하여 수많은 인명을 구했으며, 전기를 긍정적(+)과 부정적(-)인 성질을 가진 유체로 모델링했습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>표준 용어</strong><span>오늘날 우리가 쓰는 양전하(+), 음전하(-), 배터리(Battery), 충전(Charge) 등의 핵심 용어를 확립했습니다.</span></li>
+                            <li><strong>수식</strong><span>전하량 보존의 법칙: <span class="formula">ΣQ_initial = ΣQ_final</span></span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-galvani" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="image/Luigi_Galvani,_oil-painting.jpg" alt="루이지 갈바니">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1780년</span>
+                    <h2>루이지 갈바니 (Luigi Galvani)</h2>
+                    <span class="subtitle">"개구리 뒷다리와 생체 전기의 발견"</span>
+                    <div class="text-box">해부학자였던 갈바니는 해부한 개구리의 뒷다리 신경에 서로 다른 두 금속을 접촉시키면 근육이 강하게 수축하며 꿈틀거리는 현상을 발견했습니다. 그는 이것이 동물의 신경과 근육 속에 내재된 '동물 전기(Animal Electricity)'가 작용한 결과라고 확신했습니다. 비록 원인 해석에는 오류가 있었지만, 이 위대한 발견은 훗날 신경 과학과 생체 전기학이라는 완전히 새로운 의학 분야를 탄생시키는 결정적 계기가 되었습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>문화적 영향</strong><span>갈바니의 실험은 죽은 생명체에 전기로 생기를 불어넣을 수 있다는 상상력을 자극하여 소설 [프랑켄슈타인]의 영감이 되었습니다.</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-volta" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Alessandro_Volta.jpeg?width=300" alt="알레산드로 볼타">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1800년</span>
+                    <h2>알레산드로 볼타 (Alessandro Volta)</h2>
+                    <span class="subtitle">"갈바니와의 논쟁 끝에 탄생한 인류 최초의 배터리"</span>
+                    <div class="text-box">볼타는 개구리 다리의 경련이 동물의 생명력 때문이 아니라, 서로 다른 두 금속(구리와 아연)과 체액(전해질)이 만나 발생한 화학적 전압 때문임을 밝혀냈습니다. 이를 증명하기 위해 금속판 사이에 소금물에 적신 헝겊을 번갈아 층층이 쌓아 올린 '볼타 전지(Voltaic Pile)'를 발명했습니다. 이 장치는 인류에게 순식간에 튀고 사라지는 정전기가 아닌, '원할 때 지속적으로 흐르는 전류'를 최초로 제공했습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>단위의 기원</strong><span>전기적 위치 에너지의 차이, 즉 전압을 측정하는 단위인 '볼트(V)'는 그의 이름을 기리기 위해 채택되었습니다.</span></li>
+                            <li><strong>전공 수식</strong><span>전압과 에너지의 관계: <span class="formula">V = ΔW / ΔQ</span></span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-oersted" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Hans_Christian_Ørsted_daguerreotype.jpg?width=300" alt="한스 크리스티안 외르스테드">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1820년</span>
+                    <h2>한스 크리스티안 외르스테드 (H.C. Ørsted)</h2>
+                    <span class="subtitle">"전기와 자기의 놀라운 연결고리를 발견하다"</span>
+                    <div class="text-box">외르스테드는 대학교 강의 중 전원 스위치를 켜 전류가 흐르도록 한 순간, 전선 근처에 놓여 있던 나침반 바늘이 수직으로 틀어지는 현상을 발견했습니다. 수 세기 동안 과학자들은 전기 현상과 자기 현상을 전혀 관계없는 독립된 힘으로 생각했으나, 이 우연하면서도 예리한 관찰을 통해 전기가 자기를 만들어낼 수 있다는 놀라운 사실이 입증되었습니다. 이로써 '전자기학'의 서막이 올랐습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>학문적 의의</strong><span>전기와 자기력을 하나의 현상으로 통합하는 현대 물리학의 거대한 초석을 놓았습니다.</span></li>
+                            <li><strong>물리 법칙</strong><span>직선 도선 주위의 자기장 세기: <span class="formula">B = μ₀I / 2πr</span></span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-ampere" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="image/Ampere_Andre_1825.jpg" alt="앙드레 마리 앙페르">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1827년</span>
+                    <h2>앙드레 마리 앙페르 (Ampère)</h2>
+                    <span class="subtitle">"전자기학의 뉴턴, 자기 현상을 수학으로 완성하다"</span>
+                    <div class="text-box">외르스테드의 발견 소식을 접한 프랑스의 천재 수학자 앙페르는 단 일주일 만에 후속 실험을 설계하고 이를 수학적 법칙으로 정리해 냈습니다. 그는 전류가 흐르는 방향과 생성되는 자기장의 방향 사이의 관계를 나타내는 '오른나사 법칙'을 확립했습니다. 더 나아가, 자석의 본질이 물질 내부의 미세한 원자 전류 때문일 것이라는 시대를 앞서간 분자 전류 가설을 제시하여 물리 이론의 깊이를 더했습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>전류의 단위</strong><span>1초 동안 도선을 통과하는 전하의 양을 나타내는 전류의 세기 단위 '암페어(A)'는 그의 이름을 딴 것입니다.</span></li>
+                            <li><strong>핵심 수식</strong><span>앙페르 회로 법칙: <span class="formula">∮B·dl = μ₀I</span></span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-faraday" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="https://commons.wikimedia.org/wiki/Special:FilePath/M_Faraday_Th_Phillips_oil_1842.jpg?width=300" alt="마이클 패러데이">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1831년</span>
+                    <h2>마이클 패러데이 (Michael Faraday)</h2>
+                    <span class="subtitle">"자기장에서 전기를 유도하다, 현대 전력망의 아버지"</span>
+                    <div class="text-box">정규 교육을 받지 못한 제본공 출신의 패러데이는 누구보다 직관적이고 천재적인 통찰력을 가졌습니다. 그는 외르스테드의 발견을 뒤집어 '자석을 움직여서 전기를 만들 수는 없을까?'라는 질문을 품었고, 코일 주변에서 자석을 이동시키면 전류가 흐르는 '전자기 유도' 현상을 발견했습니다. 이 위대한 발견은 운동 에너지를 전기 에너지로 변환하는 최초의 발전기(Dynamo) 탄생으로 이어져, 인류가 전기를 무한히 생산할 수 있게 만들었습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>과학적 공헌</strong><span>보이지 않는 전기와 자기의 힘을 시각화한 '장(Field)'과 '역선(Lines of force)'의 개념을 처음 도입했습니다.</span></li>
+                            <li><strong>물리 수식</strong><span>패러데이 전자기 유도 법칙: <span class="formula">ε = -N(dΦ/dt)</span></span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-maxwell" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="https://commons.wikimedia.org/wiki/Special:FilePath/James_Clerk_Maxwell.png?width=300" alt="제임스 클러크 맥스웰">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1864년</span>
+                    <h2>제임스 클러크 맥스웰 (Maxwell)</h2>
+                    <span class="subtitle">"전자기학의 대통합, 빛의 진정한 정체를 밝히다"</span>
+                    <div class="text-box">스코틀랜드의 이론물리학자 맥스웰은 패러데이가 남긴 실험적 사실들과 장(Field)의 개념을 정교한 수학적 언어로 번역했습니다. 그는 기존 법칙의 모순을 해결하기 위해 '변위 전류'라는 독창적인 개념을 도입하여 전자기학을 4개의 아름다운 편미분 방정식으로 완성했습니다. 이 방정식을 풀면서 그는 전자기파의 이동 속도가 빛의 속도와 정확히 일치함을 발견하였고, 마침내 "빛은 곧 전자기파의 일종이다"라는 역사적인 결론을 도출했습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>평가</strong><span>뉴턴의 역학과 아인슈타인의 상대성이론을 잇는 가장 위대한 물리학적 성취로 평가받으며 무선 통신의 이론적 기반이 되었습니다.</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-edison" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Thomas_Edison2.jpg?width=300" alt="토머스 에디슨">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1879년</span>
+                    <h2>토머스 에디슨 (Thomas Edison)</h2>
+                    <span class="subtitle">"밤을 낮으로 바꾼 발명왕, 전력망 시대를 열다"</span>
+                    <div class="text-box">에디슨은 전구를 처음 발명한 인물은 아니지만, 수천 번의 실험 끝에 대나무 탄소 필라멘트를 적용하여 일반 가정에서도 오래 쓸 수 있는 '상용화된 실용적인 백열전구'를 만들어냈습니다. 그의 가장 위대한 업적은 전구 단품 개발에 그치지 않고, 세계 최초의 상업용 중앙 발전소(펄 스트리트 발전소)를 세워 도시 전체에 전기를 배분하는 시스템을 구축했다는 점입니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>직류 시스템</strong><span>안전성을 이유로 직류(DC) 송전 방식을 고수하였고, 이는 훗날 테슬라의 교류 진영과 치열한 '전류 전쟁'을 벌이는 원인이 되었습니다.</span></li>
+                            <li><strong>공학 수식</strong><span>전력 소비 공식: <span class="formula">P = V · I = I²R</span></span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-tesla" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Tesla_circa_1890.jpeg?width=300" alt="니콜라 테슬라">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1887년</span>
+                    <h2>니콜라 테슬라 (Nikola Tesla)</h2>
+                    <span class="subtitle">"현대 교류 전력 그리드의 진정한 설계자"</span>
+                    <div class="text-box">에디슨의 회사에서 일했던 테슬라는 직류 시스템이 거리가 멀어지면 전압이 심하게 떨어진다는 치명적인 한계를 깨달았습니다. 그는 변압기를 이용해 전압을 쉽게 높이거나 낮출 수 있는 3상 교류(AC) 시스템과 유도 전동기를 발명했습니다. 장거리 송전에 압도적으로 유리했던 그의 교류 방식은 나이아가라 폭포 발전소 채택을 기점으로 전류 전쟁에서 승리하였고, 오늘날 전 세계 전력망의 표준이 되었습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>미래적 비전</strong><span>그는 전선 없이 에너지를 보내는 무선 전력 전송을 꿈꾸었고, 레이더와 라디오 통신의 핵심 특허를 설계한 천재 발명가였습니다.</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-hertz" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Heinrich_Rudolf_Hertz.jpg?width=300" alt="하인리히 헤르츠">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1887년</span>
+                    <h2>하인리히 헤르츠 (Heinrich Hertz)</h2>
+                    <span class="subtitle">"보이지 않는 전자기 파동을 공간의 실체로 소환하다"</span>
+                    <div class="text-box">독일의 물리학자 헤르츠는 맥스웰이 수식으로만 예언했던 '전자기파'의 존재를 실험을 통해 최초로 증명해 냈습니다. 그는 실험실 한쪽에서 고전압 불꽃 방전을 일으켰고, 떨어져 있던 금속 고리(수신기)에서도 유도 불꽃이 튀는 것을 확인했습니다. 비록 그는 "이 현상이 실생활에 당장 유용할지는 모르겠다"고 겸손하게 말했지만, 이는 무선 전신과 라디오, 현대 이동통신의 시대를 여는 위대한 불꽃이었습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>주파수의 단위</strong><span>파동이 1초 동안 진동하는 횟수를 나타내는 진동수 단위 '헤르츠(Hz)'는 그의 업적을 기린 것입니다.</span></li>
+                            <li><strong>물리 법칙</strong><span>파동의 속도 공식: <span class="formula">v = f · λ</span></span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-modern" class="exhibit-hall">
+            <div class="hall-content flex-layout">
+                <div class="hall-image">
+                    <img src="https://commons.wikimedia.org/wiki/Special:FilePath/Replica-of-first-transistor.jpg?width=300" alt="초기 트랜지스터 레플리카">
+                </div>
+                <div class="hall-text">
+                    <span class="year-tag">1947년</span>
+                    <h2>트랜지스터의 탄생 (반도체 혁명)</h2>
+                    <span class="subtitle">"전기는 동력을 넘어, 복잡한 정보를 담는 두뇌가 되다"</span>
+                    <div class="text-box">벨 연구소의 윌리엄 쇼클리, 존 바딘, 월터 브래튼은 부피가 크고 열이 많이 나며 쉽게 고장 나던 진공관을 대체할 손톱만 한 고체 소자 '트랜지스터'를 발명했습니다. 게르마늄과 실리콘 등의 반도체 물질을 이용한 이 장치는 미세한 전압으로 전류의 흐름을 통제하여 스위칭(0과 1)과 신호 증폭 작용을 완벽히 수행해 냈습니다. 이 발명은 정보화 시대의 빅뱅을 일으켜 현대 디지털 문명의 기반이 되었습니다.</div>
+                    <div class="expert-info">
+                        <ul>
+                            <li><strong>기술적 의의</strong><span>현대 모든 컴퓨터의 CPU와 스마트폰, 전자 기기를 구성하는 가장 핵심적이고 기초적인 부품입니다.</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="h-footer" class="exhibit-hall footer-hall">
+            <div class="footer-content">
+                <h2>제 1관 관람을 마치며</h2>
+                <div class="quiz-section">
+                    <div id="quiz-question" class="quiz-question">질문을 불러오는 중...</div>
+                    <div id="quiz-options" class="quiz-options"></div>
+                    <p id="quiz-feedback"></p>
+                    <button onclick="loadRandomQuiz()" class="quiz-btn" style="margin-top:20px; border-style:dashed;">새로운 문제 도전 🔄</button>
+                </div>
+                <div class="btn-group">
+                    <button class="action-btn" onclick="switchView('sequence')">다음: 제 2관 시퀀스 체험관으로 이동 →</button>
+                    <button class="action-btn secondary" onclick="switchView('lobby')">로비로 나가기</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div id="view-sequence" class="view-container">
+        <div class="timeline-container timeline-center">
+            <div class="horizontal-line" style="width: 80%; min-width: 1000px; padding: 0;">
+                <a href="#s-intro" class="nav-item up active">입구</a>
+                <a href="#s-1" class="nav-item down">기본논리<br>자기유지</a>
+                <a href="#s-2" class="nav-item up">안전논리<br>인터록</a>
+                <a href="#s-3" class="nav-item down">지연논리<br>타이머</a>
+                <a href="#s-4" class="nav-item up">반복논리<br>플리커</a>
+                <a href="#s-footer" class="nav-item down">출구</a>
+            </div>
+        </div>
+
+        <section id="s-intro" class="exhibit-hall">
+            <div class="intro-content">
+                <h1>SEQUENCE CONTROL</h1>
+                <p>자동화 산업현장을 움직이는 기계적 논리의 미학,<br>기본적인 릴레이 제어 회로를 직접 조작해 보십시오.</p>
+            </div>
+        </section>
+
+        <section id="s-1" class="exhibit-hall">
+            <div class="hall-content seq-content">
+                <div class="seq-circuit">
+                    <svg viewBox="0 0 400 500">
+                        <line x1="40" y1="50" x2="360" y2="50" class="wire active" /> <text x="50" y="40" class="svg-text">L</text>
+                        <line x1="40" y1="450" x2="360" y2="450" class="wire active" /> <text x="50" y="470" class="svg-text">N</text>
+                        <line x1="200" y1="50" x2="200" y2="100" class="wire active" />
+                        <g transform="translate(200, 110)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-stop-1" style="transition: transform 0.1s;">
+                                <line x1="-2" y1="-15" x2="-2" y2="35" class="contact active" />
+                                <line x1="-2" y1="10" x2="18" y2="10" class="contact active" /><line x1="18" y1="3" x2="18" y2="17" class="contact active" />
+                            </g>
+                        </g>
+                        <text x="110" y="125" class="svg-text">STOP</text>
+                        <line x1="200" y1="140" x2="200" y2="170" class="wire c1-p-stop" /> <line x1="120" y1="170" x2="280" y2="170" class="wire c1-p-stop" />
+                        <line x1="120" y1="170" x2="120" y2="200" class="wire c1-p-stop" />
+                        <g transform="translate(120, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-start-1" style="transition: transform 0.1s;">
+                                <line x1="16" y1="-15" x2="16" y2="35" class="contact" />
+                                <line x1="16" y1="10" x2="35" y2="10" class="contact" /><line x1="35" y1="3" x2="35" y2="17" class="contact" />
+                            </g>
+                        </g>
+                        <text x="40" y="225" class="svg-text">START</text>
+                        <line x1="120" y1="240" x2="120" y2="280" class="wire c1-p-start" />
+                        <line x1="280" y1="170" x2="280" y2="200" class="wire c1-p-stop" />
+                        <g transform="translate(280, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-ry1-1" style="transition: transform 0.1s;"><line x1="16" y1="-15" x2="16" y2="35" class="contact" /></g>
+                        </g>
+                        <text x="315" y="225" class="svg-text">R1(a)</text>
+                        <line x1="280" y1="240" x2="280" y2="280" class="wire c1-p-ry1" />
+                        <line x1="120" y1="280" x2="280" y2="280" class="wire c1-p-join" /> <line x1="200" y1="280" x2="200" y2="310" class="wire c1-p-join" />
+                        <rect id="coil-1" x="175" y="310" width="50" height="50" rx="5" class="component-box" /> <text x="187" y="340" class="svg-text">R1</text>
+                        <line x1="200" y1="360" x2="200" y2="380" class="wire c1-p-join" />
+                        <circle id="lamp-1" cx="200" cy="405" r="25" class="lamp green" /> <text x="189" y="410" class="svg-text">GL</text>
+                        <line x1="200" y1="430" x2="200" y2="450" class="wire c1-p-join" />
+                    </svg>
+                    <div class="controls">
+                        <button class="btn-sim btn-start" onmousedown="s1.start=true; ev1();" onmouseup="s1.start=false; ev1();" onmouseleave="s1.start=false; ev1();">기동 조작 (START)</button>
+                        <button class="btn-sim btn-stop" onmousedown="s1.stop=true; ev1();" onmouseup="s1.stop=false; ev1();" onmouseleave="s1.stop=false; ev1();">정지 조작 (STOP)</button>
+                    </div>
+                </div>
+                <div class="seq-desc">
+                    <h2>자기유지 회로 (Self-holding)</h2>
+                    <span class="subtitle">"기계에게 '기억'을 심어준 최초의 논리"</span>
+                    <div class="text-box">거대한 모터를 스위치 한 번만 조작하여 계속 작동하게 하려면 어떻게 해야 할까요? 릴레이(계전기) 코일의 자력을 이용해 스위치에 우회로를 만들고, 전류가 스스로의 상태를 유지하게 하는 이 기술은 모든 논리 제어의 근간입니다.</div>
+                    <h4>동작 논리 확인</h4>
+                    <ul>
+                        <li>1. <span class="highlight">기동 버튼</span>을 누르면 릴레이(R1)가 활성화되어 램프가 켜집니다.</li>
+                        <li>2. 손을 떼어 스위치가 열리더라도 R1(a) 보조접점을 통해 전기가 스스로 순환하며 <b>동작 상태를 기억</b>합니다.</li>
+                        <li>3. 정지 버튼을 조작하여 전체 전원 공급을 끊으면 기억이 초기화됩니다.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="s-2" class="exhibit-hall">
+            <div class="hall-content seq-content">
+                <div class="seq-circuit">
+                    <svg viewBox="0 0 680 500">
+                        <line x1="40" y1="50" x2="640" y2="50" class="wire active" /> <text x="50" y="40" class="svg-text">L</text>
+                        <line x1="40" y1="450" x2="640" y2="450" class="wire active" /> <text x="50" y="470" class="svg-text">N</text>
+                        <line x1="340" y1="50" x2="340" y2="100" class="wire active" />
+                        <g transform="translate(340, 110)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-stop-int" style="transition: transform 0.1s;">
+                                <line x1="-2" y1="-15" x2="-2" y2="35" class="contact active" />
+                                <line x1="-2" y1="10" x2="18" y2="10" class="contact active" /><line x1="18" y1="3" x2="18" y2="17" class="contact active" />
+                            </g>
+                        </g>
+                        <text x="270" y="125" class="svg-text">STOP</text>
+                        <line x1="340" y1="140" x2="340" y2="170" class="wire cI-p-stop" />
+                        <line x1="200" y1="170" x2="480" y2="170" class="wire cI-p-stop" />
+                        
+                        <line x1="200" y1="170" x2="200" y2="200" class="wire cI-p-stop" />
+                        <g transform="translate(200, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-start1-int" style="transition: transform 0.1s;">
+                                <line x1="16" y1="-15" x2="16" y2="35" class="contact" />
+                                <line x1="16" y1="10" x2="35" y2="10" class="contact" /><line x1="35" y1="3" x2="35" y2="17" class="contact" />
+                            </g>
+                        </g>
+                        <text x="150" y="225" class="svg-text">PB1</text>
+                        <line x1="200" y1="240" x2="200" y2="280" class="wire cI-p-start1" />
+                        <line x1="280" y1="170" x2="280" y2="200" class="wire cI-p-stop" />
+                        <g transform="translate(280, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-ry1a-int" style="transition: transform 0.1s;"><line x1="16" y1="-15" x2="16" y2="35" class="contact" /></g>
+                        </g>
+                        <text x="300" y="225" class="svg-text">R1(a)</text>
+                        <line x1="280" y1="240" x2="280" y2="280" class="wire cI-p-ry1a" />
+                        <line x1="200" y1="280" x2="280" y2="280" class="wire cI-p-join1" /> <line x1="240" y1="280" x2="240" y2="300" class="wire cI-p-join1" />
+                        <g transform="translate(240, 310)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-ry2b-int" style="transition: transform 0.1s;"><line x1="-2" y1="-15" x2="-2" y2="35" class="contact" /></g>
+                        </g>
+                        <text x="180" y="325" class="svg-text">R2(b)</text>
+                        <line x1="240" y1="340" x2="240" y2="360" class="wire cI-p-ry2b" />
+                        <line x1="200" y1="360" x2="280" y2="360" class="wire cI-p-ry2b" />
+                        <line x1="200" y1="360" x2="200" y2="370" class="wire cI-p-ry2b" />
+                        <rect id="coil-r1-int" x="175" y="370" width="50" height="50" rx="5" class="component-box" /> <text x="187" y="400" class="svg-text">R1</text>
+                        <line x1="200" y1="420" x2="200" y2="450" class="wire cI-p-ry2b" />
+                        <line x1="280" y1="360" x2="280" y2="370" class="wire cI-p-ry2b" />
+                        <circle id="lamp-gl-int" cx="280" cy="395" r="25" class="lamp green" /> <text x="269" y="400" class="svg-text">GL</text>
+                        <line x1="280" y1="420" x2="280" y2="450" class="wire cI-p-ry2b" />
+
+                        <line x1="400" y1="170" x2="400" y2="200" class="wire cI-p-stop" />
+                        <g transform="translate(400, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-start2-int" style="transition: transform 0.1s;">
+                                <line x1="16" y1="-15" x2="16" y2="35" class="contact" />
+                                <line x1="16" y1="10" x2="35" y2="10" class="contact" /><line x1="35" y1="3" x2="35" y2="17" class="contact" />
+                            </g>
+                        </g>
+                        <text x="350" y="225" class="svg-text">PB2</text>
+                        <line x1="400" y1="240" x2="400" y2="280" class="wire cI-p-start2" />
+                        <line x1="480" y1="170" x2="480" y2="200" class="wire cI-p-stop" />
+                        <g transform="translate(480, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-ry2a-int" style="transition: transform 0.1s;"><line x1="16" y1="-15" x2="16" y2="35" class="contact" /></g>
+                        </g>
+                        <text x="500" y="225" class="svg-text">R2(a)</text>
+                        <line x1="480" y1="240" x2="480" y2="280" class="wire cI-p-ry2a" />
+                        <line x1="400" y1="280" x2="480" y2="280" class="wire cI-p-join2" /> <line x1="440" y1="280" x2="440" y2="300" class="wire cI-p-join2" />
+                        <g transform="translate(440, 310)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-ry1b-int" style="transition: transform 0.1s;"><line x1="-2" y1="-15" x2="-2" y2="35" class="contact" /></g>
+                        </g>
+                        <text x="380" y="325" class="svg-text">R1(b)</text>
+                        <line x1="440" y1="340" x2="440" y2="360" class="wire cI-p-ry1b" />
+                        <line x1="400" y1="360" x2="480" y2="360" class="wire cI-p-ry1b" />
+                        <line x1="400" y1="360" x2="400" y2="370" class="wire cI-p-ry1b" />
+                        <rect id="coil-r2-int" x="375" y="370" width="50" height="50" rx="5" class="component-box" /> <text x="387" y="400" class="svg-text">R2</text>
+                        <line x1="400" y1="420" x2="400" y2="450" class="wire cI-p-ry1b" />
+                        <line x1="480" y1="360" x2="480" y2="370" class="wire cI-p-ry1b" />
+                        <circle id="lamp-rl-int" cx="480" cy="395" r="25" class="lamp red" /> <text x="469" y="400" class="svg-text">RL</text>
+                        <line x1="480" y1="420" x2="480" y2="450" class="wire cI-p-ry1b" />
+                    </svg>
+                    <div class="controls">
+                        <button class="btn-sim btn-start" onmousedown="sI.start1=true; evI();" onmouseup="sI.start1=false; evI();" onmouseleave="sI.start1=false; evI();">1호기 기동 (PB1)</button>
+                        <button class="btn-sim btn-start-alt" onmousedown="sI.start2=true; evI();" onmouseup="sI.start2=false; evI();" onmouseleave="sI.start2=false; evI();">2호기 기동 (PB2)</button>
+                        <button class="btn-sim btn-stop" onmousedown="sI.stop=true; evI();" onmouseup="sI.stop=false; evI();" onmouseleave="sI.stop=false; evI();">정지 및 초기화</button>
+                    </div>
+                </div>
+                <div class="seq-desc">
+                    <h2>인터록 회로 (Interlock)</h2>
+                    <span class="subtitle">"물리적 충돌을 차단하는 상호 배제 논리"</span>
+                    <div class="text-box">두 기기(예: 정회전과 역회전 모터)가 동시에 켜질 경우 심각한 파손이 발생할 수 있습니다. 이를 방지하기 위해 <b>한 회로가 동작하면 반드시 상대방 회로를 차단</b>하도록 설계된 핵심 안전장치입니다. 선입력 우선 논리라고도 합니다.</div>
+                    <h4>동작 논리 확인</h4>
+                    <ul>
+                        <li>1. <span class="highlight">1호기(PB1)</span>를 가동시키면 코일 R1이 활성화되며, 우측 회로의 전원 길목에 있는 <b>R1(b) 접점이 물리적으로 열립니다.</b></li>
+                        <li>2. 이 상태에서는 2호기 버튼을 아무리 조작하여도 전류가 코일 R2로 내려갈 수 없습니다.</li>
+                        <li>3. 조작 대상을 변경하려면 먼저 정지 버튼을 통해 회로를 리셋해야만 합니다.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="s-3" class="exhibit-hall">
+            <div class="hall-content seq-content">
+                <div class="seq-circuit">
+                    <svg viewBox="0 0 550 500">
+                        <line x1="40" y1="50" x2="510" y2="50" class="wire active" /> <text x="50" y="40" class="svg-text">L</text>
+                        <line x1="40" y1="450" x2="510" y2="450" class="wire active" /> <text x="50" y="470" class="svg-text">N</text>
+                        <line x1="160" y1="50" x2="160" y2="100" class="wire active" />
+                        <g transform="translate(160, 110)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-stop-2" style="transition: transform 0.1s;">
+                                <line x1="-2" y1="-15" x2="-2" y2="35" class="contact active" />
+                                <line x1="-2" y1="10" x2="18" y2="10" class="contact active" /><line x1="18" y1="3" x2="18" y2="17" class="contact active" />
+                            </g>
+                        </g>
+                        <text x="90" y="125" class="svg-text">STOP</text>
+                        <line x1="160" y1="140" x2="160" y2="170" class="wire c2-p-stop" /> <line x1="100" y1="170" x2="220" y2="170" class="wire c2-p-stop" />
+                        <line x1="100" y1="170" x2="100" y2="200" class="wire c2-p-stop" />
+                        <g transform="translate(100, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-start-2" style="transition: transform 0.1s;">
+                                <line x1="16" y1="-15" x2="16" y2="35" class="contact" />
+                                <line x1="16" y1="10" x2="35" y2="10" class="contact" /><line x1="35" y1="3" x2="35" y2="17" class="contact" />
+                            </g>
+                        </g>
+                        <text x="30" y="225" class="svg-text">START</text>
+                        <line x1="100" y1="240" x2="100" y2="280" class="wire c2-p-start" />
+                        <line x1="220" y1="170" x2="220" y2="200" class="wire c2-p-stop" />
+                        <g transform="translate(220, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-ry1-2" style="transition: transform 0.1s;"><line x1="16" y1="-15" x2="16" y2="35" class="contact" /></g>
+                        </g>
+                        <text x="250" y="225" class="svg-text">R1(a)</text>
+                        <line x1="220" y1="240" x2="220" y2="280" class="wire c2-p-ry1" />
+                        <line x1="100" y1="280" x2="220" y2="280" class="wire c2-p-join" /> <line x1="160" y1="280" x2="160" y2="310" class="wire c2-p-join" />
+                        <rect id="coil-ry-2" x="135" y="310" width="50" height="50" rx="5" class="component-box" /> <text x="147" y="340" class="svg-text">R1</text>
+                        <line x1="160" y1="360" x2="160" y2="450" class="wire c2-p-join" />
+                        
+                        <line x1="160" y1="295" x2="300" y2="295" class="wire c2-p-join" /> <line x1="300" y1="295" x2="300" y2="310" class="wire c2-p-join" />
+                        <rect id="coil-t-2" x="275" y="310" width="50" height="50" rx="5" class="component-box" /> <text x="293" y="340" class="svg-text">T</text>
+                        <line x1="300" y1="360" x2="300" y2="450" class="wire c2-p-join" />
+                        <text id="txt-timer" x="282" y="385" fill="#d4a017" font-size="14" style="font-family: 'Noto Sans KR', sans-serif;">0.0s</text>
+
+                        <line x1="420" y1="50" x2="420" y2="200" class="wire active" />
+                        <g transform="translate(420, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-timer" style="transition: transform 0.1s;">
+                                <line x1="16" y1="-15" x2="16" y2="35" class="contact" />
+                                <polygon points="16,4 16,16 26,10" fill="none" stroke="#9c8a76" stroke-width="2" class="contact" />
+                            </g>
+                        </g>
+                        <text x="450" y="225" class="svg-text">T(a)</text>
+                        <line x1="420" y1="240" x2="420" y2="360" class="wire c2-p-tout" />
+                        <circle id="lamp-2" cx="420" cy="385" r="25" class="lamp green" /> <text x="409" y="390" class="svg-text">GL</text>
+                        <line x1="420" y1="410" x2="420" y2="450" class="wire c2-p-tout" />
+                    </svg>
+                    <div class="controls">
+                        <button class="btn-sim btn-start" onmousedown="s2.start=true; ev2();" onmouseup="s2.start=false; ev2();" onmouseleave="s2.start=false; ev2();">신호 입력 (START)</button>
+                        <button class="btn-sim btn-stop" onmousedown="s2.stop=true; ev2();" onmouseup="s2.stop=false; ev2();" onmouseleave="s2.stop=false; ev2();">전원 차단 (STOP)</button>
+                    </div>
+                </div>
+                <div class="seq-desc">
+                    <h2>타이머 (Delay Circuit)</h2>
+                    <span class="subtitle">"시간 차이를 제어하는 특별한 계전기"</span>
+                    <div class="text-box">공정 라인에서 즉각적인 동작 대신 <b>지정된 지연 시간(Delay)</b>이 경과한 후에 부하를 작동시키기 위해 고안된 지연 회로입니다.</div>
+                    <h4>동작 논리 확인</h4>
+                    <ul>
+                        <li>1. 입력 버튼을 조작하여 유지 회로가 구성되면 <span class="highlight">타이머(T) 코일</span>에 전압이 인가되고 타이머가 3초의 카운트다운을 시작합니다.</li>
+                        <li>2. 일반 접점과 달리, 우측의 <b>삼각형(▷) 한시 접점</b>은 지정된 시간(3초)이 모두 흘러야만 연결되어 램프를 점등시킵니다.</li>
+                        <li>3. 전원 공급을 중단하면 딜레이 없이 즉각 순시 복귀합니다.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="s-4" class="exhibit-hall">
+            <div class="hall-content seq-content">
+                <div class="seq-circuit">
+                    <svg viewBox="0 0 550 500">
+                        <line x1="40" y1="50" x2="510" y2="50" class="wire active" /> <text x="50" y="40" class="svg-text">L</text>
+                        <line x1="40" y1="450" x2="510" y2="450" class="wire active" /> <text x="50" y="470" class="svg-text">N</text>
+                        <line x1="160" y1="50" x2="160" y2="100" class="wire active" />
+                        <g transform="translate(160, 110)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-stop-3" style="transition: transform 0.1s;">
+                                <line x1="-2" y1="-15" x2="-2" y2="35" class="contact active" />
+                                <line x1="-2" y1="10" x2="18" y2="10" class="contact active" /><line x1="18" y1="3" x2="18" y2="17" class="contact active" />
+                            </g>
+                        </g>
+                        <text x="90" y="125" class="svg-text">STOP</text>
+                        <line x1="160" y1="140" x2="160" y2="170" class="wire c3-p-stop" /> <line x1="100" y1="170" x2="220" y2="170" class="wire c3-p-stop" />
+                        <line x1="100" y1="170" x2="100" y2="200" class="wire c3-p-stop" />
+                        <g transform="translate(100, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-start-3" style="transition: transform 0.1s;">
+                                <line x1="16" y1="-15" x2="16" y2="35" class="contact" />
+                                <line x1="16" y1="10" x2="35" y2="10" class="contact" /><line x1="35" y1="3" x2="35" y2="17" class="contact" />
+                            </g>
+                        </g>
+                        <text x="30" y="225" class="svg-text">START</text>
+                        <line x1="100" y1="240" x2="100" y2="280" class="wire c3-p-start" />
+                        <line x1="220" y1="170" x2="220" y2="200" class="wire c3-p-stop" />
+                        <g transform="translate(220, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-ry1-3" style="transition: transform 0.1s;"><line x1="16" y1="-15" x2="16" y2="35" class="contact" /></g>
+                        </g>
+                        <text x="250" y="225" class="svg-text">R1(a)</text>
+                        <line x1="220" y1="240" x2="220" y2="280" class="wire c3-p-ry1" />
+                        <line x1="100" y1="280" x2="220" y2="280" class="wire c3-p-join" /> <line x1="160" y1="280" x2="160" y2="310" class="wire c3-p-join" />
+                        <rect id="coil-ry-3" x="135" y="310" width="50" height="50" rx="5" class="component-box" /> <text x="147" y="340" class="svg-text">R1</text>
+                        <line x1="160" y1="360" x2="160" y2="450" class="wire c3-p-join" />
+                        
+                        <line x1="160" y1="295" x2="300" y2="295" class="wire c3-p-join" /> <line x1="300" y1="295" x2="300" y2="310" class="wire c3-p-join" />
+                        <rect id="coil-fr-3" x="275" y="310" width="50" height="50" rx="5" class="component-box" /> <text x="288" y="340" class="svg-text">FR</text>
+                        <line x1="300" y1="360" x2="300" y2="450" class="wire c3-p-join" />
+
+                        <line x1="380" y1="50" x2="380" y2="200" class="wire active" />
+                        <g transform="translate(380, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-flicker-a" style="transition: transform 0.1s;">
+                                <line x1="16" y1="-15" x2="16" y2="35" class="contact" />
+                                <polygon points="10,10 16,4 22,10 16,16" fill="none" stroke="#9c8a76" stroke-width="2" class="contact" />
+                            </g>
+                        </g>
+                        <text x="400" y="225" class="svg-text">FR(a)</text>
+                        <line x1="380" y1="240" x2="380" y2="360" class="wire c3-p-frout-a" />
+                        <circle id="lamp-gl-3" cx="380" cy="385" r="25" class="lamp green" /> <text x="369" y="390" class="svg-text">GL</text>
+                        <line x1="380" y1="410" x2="380" y2="450" class="wire c3-p-frout-a" />
+
+                        <line x1="460" y1="50" x2="460" y2="200" class="wire active" />
+                        <g transform="translate(460, 210)">
+                            <circle cx="0" cy="-10" r="4" class="contact-point" /> <circle cx="0" cy="30" r="4" class="contact-point" />
+                            <g id="grp-flicker-b" style="transition: transform 0.1s;">
+                                <line x1="-2" y1="-15" x2="-2" y2="35" class="contact" />
+                                <polygon points="-8,10 -2,4 4,10 -2,16" fill="none" stroke="#9c8a76" stroke-width="2" class="contact" />
+                            </g>
+                        </g>
+                        <text x="480" y="225" class="svg-text">FR(b)</text>
+                        <line x1="460" y1="240" x2="460" y2="360" class="wire c3-p-frout-b" />
+                        <circle id="lamp-rl-3" cx="460" cy="385" r="25" class="lamp red" /> <text x="450" y="390" class="svg-text">RL</text>
+                        <line x1="460" y1="410" x2="460" y2="450" class="wire c3-p-frout-b" />
+                    </svg>
+                    <div class="controls">
+                        <button class="btn-sim btn-start" onmousedown="s3.start=true; ev3();" onmouseup="s3.start=false; ev3();" onmouseleave="s3.start=false; ev3();">점멸 신호 인가 (START)</button>
+                        <button class="btn-sim btn-stop" onmousedown="s3.stop=true; ev3();" onmouseup="s3.stop=false; ev3();" onmouseleave="s3.stop=false; ev3();">신호 차단 (STOP)</button>
+                    </div>
+                </div>
+                <div class="seq-desc">
+                    <h2>플리커 (Flicker)</h2>
+                    <span class="subtitle">"일정 주기로 반복되는 시각적 경보 논리"</span>
+                    <div class="text-box">설비의 이상을 알리는 경광등이나 주기적인 신호를 보내야 할 때 등, <b>일정한 주기로 접점의 개폐를 교차(점멸)</b>시켜야 할 때 사용되는 회로입니다.</div>
+                    <h4>동작 논리 확인</h4>
+                    <ul>
+                        <li>1. 대기: 전원이 입력되어 있으므로, 평상시 닫혀있는 <span class="highlight">FR(b)</span> 접점을 거쳐 붉은 등(RL)이 기본 점등되어 있습니다.</li>
+                        <li>2. 가동: 조작 스위치를 누르면 다이아몬드(◁l▷) 기호가 달린 공통 접점 막대가 1초 간격으로 양방향으로 이동하며 GL 램프와 RL 램프를 교대로 점등시킵니다.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="s-footer" class="exhibit-hall footer-hall">
+            <div class="footer-content">
+                <h2>제 2관 체험을 마치며</h2>
+                <div class="btn-group">
+                    <button class="action-btn secondary" onclick="switchView('history')">← 이전: 제 1관 전기의 역사관으로 이동</button>
+                    <button class="action-btn" onclick="switchView('lobby')">로비로 나가기 🏠</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+    // ------------------------------------
+    // [배경음악 제어 및 자연스러운 페이드 루프 로직]
+    // ------------------------------------
+    const bgm = document.getElementById('bgm');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const muteBtn = document.getElementById('muteBtn');
+    const volumeSlider = document.getElementById('volumeSlider');
+
+    let targetVolume = 0.15; 
+    const FADE_TIME = 3.0; // 노래 끝나기/시작 시 3초에 걸쳐 부드럽게 볼륨 조절
+
+    bgm.volume = targetVolume;
+
+    playPauseBtn.addEventListener('click', () => {
+        if (bgm.paused) {
+            bgm.play();
+            playPauseBtn.innerText = '⏸';
+        } else {
+            bgm.pause();
+            playPauseBtn.innerText = '▶';
+        }
+    });
+
+    muteBtn.addEventListener('click', () => {
+        bgm.muted = !bgm.muted;
+        updateMuteIcon();
+    });
+
+    volumeSlider.addEventListener('input', (e) => {
+        targetVolume = parseFloat(e.target.value);
+        if (!bgm.muted) bgm.volume = targetVolume;
+        
+        if (targetVolume > 0 && bgm.muted) bgm.muted = false;
+        else if (targetVolume == 0) bgm.muted = true;
+        
+        updateMuteIcon();
+    });
+
+    function updateMuteIcon() {
+        if (bgm.muted || targetVolume === 0) muteBtn.innerText = '🔇';
+        else muteBtn.innerText = '🔊';
+    }
+
+    // 노래 끝/시작 지점 부드러운 페이드인/아웃 로직 (timeupdate 활용)
+    bgm.addEventListener('timeupdate', () => {
+        if (bgm.duration > 0 && !bgm.muted) {
+            const timeLeft = bgm.duration - bgm.currentTime;
+            
+            // 곡이 끝나기 3초 전부터 서서히 페이드 아웃
+            if (timeLeft <= FADE_TIME && timeLeft > 0) {
+                let fadeVol = targetVolume * (timeLeft / FADE_TIME);
+                bgm.volume = Math.max(0, fadeVol);
+            }
+            // 곡이 새로 시작할 때 3초 동안 서서히 페이드 인
+            else if (bgm.currentTime <= FADE_TIME) {
+                let fadeVol = targetVolume * (bgm.currentTime / FADE_TIME);
+                bgm.volume = Math.min(targetVolume, fadeVol);
+            }
+            // 중간 지점에서는 목표 볼륨 유지
+            else {
+                if (Math.abs(bgm.volume - targetVolume) > 0.01) bgm.volume = targetVolume;
+            }
+        }
+    });
+
+    // 곡이 완전히 종료되면 다시 0초부터 시작 (무한 페이드 루프)
+    bgm.addEventListener('ended', () => {
+        bgm.currentTime = 0;
+        bgm.play();
+    });
+
+    // ------------------------------------
+    // [탭 및 화면 전환 로직]
+    // ------------------------------------
+    function switchView(viewId) {
+        // 모든 뷰 숨기기
+        document.querySelectorAll('.view-container').forEach(view => {
+            view.classList.remove('active');
+        });
+        // 목표 뷰 보이기
+        const targetView = document.getElementById('view-' + viewId);
+        targetView.classList.add('active');
+        targetView.scrollTo(0, 0); // 전환 시 최상단으로
+
+        // 탭 스타일 변경
+        document.querySelectorAll('.global-tab').forEach(tab => {
+            tab.classList.remove('active');
+        });
+        document.getElementById('tab-' + viewId).classList.add('active');
+    }
+
+    // ------------------------------------
+    // [스크롤 & 타임라인 동기화 로직]
+    // ------------------------------------
+    document.querySelectorAll('.view-container').forEach(container => {
+        // 타임라인 클릭 스크롤
+        container.querySelectorAll('.nav-item').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault(); 
+                const targetId = this.getAttribute('href');
+                const targetSection = container.querySelector(targetId);
+                if (targetSection) container.scrollTo({ top: targetSection.offsetTop, behavior: 'smooth' });
+            });
+        });
+
+        // 스크롤 시 갱신 로직
+        container.addEventListener('scroll', () => {
+            let current = "";
+            const sections = container.querySelectorAll('.exhibit-hall');
+            
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                // 콘텐츠 페이드인 애니메이션
+                const content = section.querySelector('.hall-content');
+                if(content) {
+                    if (container.scrollTop >= sectionTop - (window.innerHeight * 0.6)) content.classList.add('active');
+                    else content.classList.remove('active');
+                }
+                // 현재 섹션 파악 (타임라인용)
+                if (container.scrollTop >= (sectionTop - 250)) current = section.getAttribute('id');
+            });
+
+            // 타임라인 하이라이트 및 자동 스크롤
+            container.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+                if(item.getAttribute('href') === `#${current}`) {
+                    item.classList.add('active');
+                    const timeline = item.closest('.timeline-container');
+                    if(timeline && !timeline.classList.contains('timeline-center')) {
+                        const scrollLeft = item.offsetLeft - (timeline.offsetWidth / 2) + (item.offsetWidth / 2);
+                        timeline.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+                    }
+                }
+            });
+        });
+
+        // 마우스 휠 스냅 (로비 제외)
+        let isScrolling = false;
+        container.addEventListener('wheel', (e) => {
+            if (isScrolling || container.id === 'view-lobby') return;
+            const direction = e.deltaY > 0 ? 1 : -1;
+            const sections = Array.from(container.querySelectorAll('.exhibit-hall'));
+            if(sections.length === 0) return;
+
+            let index = 0;
+            sections.forEach((s, i) => {
+                if (Math.abs(container.scrollTop - s.offsetTop) < (window.innerHeight / 2)) index = i;
+            });
+
+            const nextIndex = index + direction;
+            if (nextIndex >= 0 && nextIndex < sections.length) {
+                e.preventDefault();
+                isScrolling = true;
+                container.scrollTo({ top: sections[nextIndex].offsetTop, behavior: 'smooth' });
+                setTimeout(() => { isScrolling = false; }, 800); // 애니메이션 시간 동안 차단
+            }
+        }, { passive: false });
+    });
+
+    // ------------------------------------
+    // [퀴즈 로직 (역사관)]
+    // ------------------------------------
+    const quizData = [
+        { q: "전기학의 어원이 된 '호박(Amber)'을 마찰시켜 신비한 현상을 관찰한 철학자는?", a: ["소크라테스", "탈레스", "플라톤"], cor: "탈레스" },
+        { q: "지구가 거대한 자석임을 주장하고 Electricity라는 용어를 정립한 인물은?", a: ["뉴턴", "길버트", "아인슈타인"], cor: "길버트" },
+        { q: "번개가 전기임을 증명하기 위해 폭풍우 속에서 연을 날린 대담한 과학자는?", a: ["프랭클린", "에디슨", "볼타"], cor: "프랭클린" },
+        { q: "최초로 지속적인 전류를 공급하는 화학 전지(배터리)를 만든 사람은?", a: ["볼타", "앙페르", "패러데이"], cor: "볼타" }
+    ];
+
+    function loadRandomQuiz() {
+        const randomIndex = Math.floor(Math.random() * quizData.length);
+        const quiz = quizData[randomIndex];
+        const optionsEl = document.getElementById('quiz-options');
+        document.getElementById('quiz-question').innerText = "💡 지식 테스트: " + quiz.q;
+        document.getElementById('quiz-feedback').innerText = "";
+        optionsEl.innerHTML = "";
+
+        [...quiz.a].sort(() => Math.random() - 0.5).forEach(opt => {
+            const btn = document.createElement('button');
+            btn.className = 'quiz-btn'; btn.innerText = opt;
+            btn.onclick = () => {
+                const fb = document.getElementById('quiz-feedback');
+                if(opt === quiz.cor) { fb.innerText = "정답입니다! 🎓"; fb.style.color = "#4CAF50"; } 
+                else { fb.innerText = "아쉽습니다! 정답은 '" + quiz.cor + "'입니다."; fb.style.color = "#FF5252"; }
+            };
+            optionsEl.appendChild(btn);
+        });
+    }
+
+    // ------------------------------------
+    // [시퀀스 제어 시뮬레이션 로직]
+    // ------------------------------------
+    // 헬퍼: 클래스 토글
+    const toggle = (cls, cond) => document.querySelectorAll(cls).forEach(el => cond ? el.classList.add('active') : el.classList.remove('active'));
+
+    // 회로 1: 자기유지
+    let s1 = { start: false, stop: false, ry1: false };
+    function ev1() {
+        let pStop = !s1.stop; let pStart = pStop && s1.start; let pRy1 = pStop && s1.ry1; s1.ry1 = pStart || pRy1;
+        toggle('#s-1 .c1-p-stop', pStop); toggle('#s-1 .c1-p-start', pStart); 
+        toggle('#s-1 .c1-p-ry1', pRy1); toggle('#s-1 .c1-p-join', s1.ry1);
+        s1.ry1 ? document.getElementById('coil-1').classList.add('active') : document.getElementById('coil-1').classList.remove('active');
+        s1.ry1 ? document.getElementById('lamp-1').classList.add('active') : document.getElementById('lamp-1').classList.remove('active');
+        document.getElementById('grp-stop-1').setAttribute('transform', s1.stop ? 'translate(-14, 0)' : 'translate(0, 0)'); toggle('#grp-stop-1 .contact', !s1.stop);
+        document.getElementById('grp-start-1').setAttribute('transform', s1.start ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-start-1 .contact', pStart);
+        document.getElementById('grp-ry1-1').setAttribute('transform', s1.ry1 ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-ry1-1 .contact', pRy1);
+    }
+
+    // 회로 2: 인터록 (상호배제)
+    let sI = { start1: false, start2: false, stop: false, ry1: false, ry2: false };
+    function evI() {
+        let pStop = !sI.stop;
+        let pStart1 = pStop && sI.start1; let pStart2 = pStop && sI.start2;
+        let pRy1a = pStop && sI.ry1; let pRy2a = pStop && sI.ry2;
+        let pJoin1 = pStart1 || pRy1a; let pJoin2 = pStart2 || pRy2a;
+
+        // 인터록 핵심 논리
+        if (pJoin1 && !sI.ry2) sI.ry1 = true; else sI.ry1 = false;
+        if (pJoin2 && !sI.ry1) sI.ry2 = true; else sI.ry2 = false;
+
+        // 시각화 업데이트
+        pRy1a = pStop && sI.ry1; pRy2a = pStop && sI.ry2;
+        let pRy2b = pJoin1 && !sI.ry2; let pRy1b = pJoin2 && !sI.ry1;
+
+        toggle('#s-2 .cI-p-stop', pStop);
+        toggle('#s-2 .cI-p-start1', pStart1); toggle('#s-2 .cI-p-ry1a', pRy1a); toggle('#s-2 .cI-p-join1', pJoin1);
+        toggle('#s-2 .cI-p-ry2b', pRy2b); 
+        toggle('#s-2 .cI-p-start2', pStart2); toggle('#s-2 .cI-p-ry2a', pRy2a); toggle('#s-2 .cI-p-join2', pJoin2);
+        toggle('#s-2 .cI-p-ry1b', pRy1b); 
+
+        sI.ry1 ? document.getElementById('coil-r1-int').classList.add('active') : document.getElementById('coil-r1-int').classList.remove('active');
+        sI.ry1 ? document.getElementById('lamp-gl-int').classList.add('active') : document.getElementById('lamp-gl-int').classList.remove('active');
+        sI.ry2 ? document.getElementById('coil-r2-int').classList.add('active') : document.getElementById('coil-r2-int').classList.remove('active');
+        sI.ry2 ? document.getElementById('lamp-rl-int').classList.add('active') : document.getElementById('lamp-rl-int').classList.remove('active');
+
+        document.getElementById('grp-stop-int').setAttribute('transform', sI.stop ? 'translate(-14, 0)' : 'translate(0, 0)'); toggle('#grp-stop-int .contact', !sI.stop);
+        document.getElementById('grp-start1-int').setAttribute('transform', sI.start1 ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-start1-int .contact', pStart1);
+        document.getElementById('grp-ry1a-int').setAttribute('transform', sI.ry1 ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-ry1a-int .contact', pRy1a);
+        document.getElementById('grp-ry2b-int').setAttribute('transform', sI.ry2 ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-ry2b-int .contact', pRy2b); 
+        document.getElementById('grp-start2-int').setAttribute('transform', sI.start2 ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-start2-int .contact', pStart2);
+        document.getElementById('grp-ry2a-int').setAttribute('transform', sI.ry2 ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-ry2a-int .contact', pRy2a);
+        document.getElementById('grp-ry1b-int').setAttribute('transform', sI.ry1 ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-ry1b-int .contact', pRy1b); 
+    }
+
+    // 회로 3: 타이머 (온딜레이)
+    let s2 = { start: false, stop: false, ry1: false, tDone: false, tid: null, stTime: 0 };
+    function ev2() {
+        let pStop = !s2.stop; let pStart = pStop && s2.start; let pRy1 = pStop && s2.ry1; s2.ry1 = pStart || pRy1;
+        toggle('#s-3 .c2-p-stop', pStop); toggle('#s-3 .c2-p-start', pStart); toggle('#s-3 .c2-p-ry1', pRy1); toggle('#s-3 .c2-p-join', s2.ry1);
+        
+        if(s2.ry1) { 
+            document.getElementById('coil-ry-2').classList.add('active'); document.getElementById('coil-t-2').classList.add('active'); 
+            if(!s2.tid && !s2.tDone) {
+                s2.stTime = Date.now();
+                s2.tid = setInterval(() => {
+                    let elap = (Date.now() - s2.stTime) / 1000;
+                    if(elap >= 3) { s2.tDone = true; clearInterval(s2.tid); document.getElementById('txt-timer').textContent = "3.0s (ON)"; ev2(); } 
+                    else { document.getElementById('txt-timer').textContent = elap.toFixed(1) + "s"; }
+                }, 100);
+            }
+        } else { 
+            document.getElementById('coil-ry-2').classList.remove('active'); document.getElementById('coil-t-2').classList.remove('active'); 
+            clearInterval(s2.tid); s2.tid = null; s2.tDone = false; document.getElementById('txt-timer').textContent = "0.0s";
+        }
+        document.getElementById('grp-stop-2').setAttribute('transform', s2.stop ? 'translate(-14, 0)' : 'translate(0, 0)'); toggle('#grp-stop-2 .contact', !s2.stop);
+        document.getElementById('grp-start-2').setAttribute('transform', s2.start ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-start-2 .contact', pStart);
+        document.getElementById('grp-ry1-2').setAttribute('transform', s2.ry1 ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-ry1-2 .contact', pRy1);
+        document.getElementById('grp-timer').setAttribute('transform', s2.tDone ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-timer .contact', s2.tDone);
+        toggle('#s-3 .c2-p-tout', s2.tDone);
+        s2.tDone ? document.getElementById('lamp-2').classList.add('active') : document.getElementById('lamp-2').classList.remove('active');
+    }
+
+    // 회로 4: 플리커 (점멸)
+    let s3 = { start: false, stop: false, ry1: false, fOn: false, fid: null };
+    function ev3() {
+        let pStop = !s3.stop; let pStart = pStop && s3.start; let pRy1 = pStop && s3.ry1; s3.ry1 = pStart || pRy1;
+        toggle('#s-4 .c3-p-stop', pStop); toggle('#s-4 .c3-p-start', pStart); toggle('#s-4 .c3-p-ry1', pRy1); toggle('#s-4 .c3-p-join', s3.ry1);
+        
+        if(s3.ry1) { 
+            document.getElementById('coil-ry-3').classList.add('active'); document.getElementById('coil-fr-3').classList.add('active'); 
+            if(!s3.fid) { s3.fid = setInterval(() => { s3.fOn = !s3.fOn; ev3Vis(); }, 1000); }
+        } else { 
+            document.getElementById('coil-ry-3').classList.remove('active'); document.getElementById('coil-fr-3').classList.remove('active'); 
+            clearInterval(s3.fid); s3.fid = null; s3.fOn = false; ev3Vis();
+        }
+        document.getElementById('grp-stop-3').setAttribute('transform', s3.stop ? 'translate(-14, 0)' : 'translate(0, 0)'); toggle('#grp-stop-3 .contact', !s3.stop);
+        document.getElementById('grp-start-3').setAttribute('transform', s3.start ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-start-3 .contact', pStart);
+        document.getElementById('grp-ry1-3').setAttribute('transform', s3.ry1 ? 'translate(-12, 0)' : 'translate(0, 0)'); toggle('#grp-ry1-3 .contact', pRy1);
+        ev3Vis();
+    }
+    
+    function ev3Vis() {
+        document.getElementById('grp-flicker-a').setAttribute('transform', s3.fOn ? 'translate(-12, 0)' : 'translate(0, 0)');
+        let pFroutA = s3.fOn; toggle('#grp-flicker-a .contact', pFroutA); toggle('#s-4 .c3-p-frout-a', pFroutA);
+        pFroutA ? document.getElementById('lamp-gl-3').classList.add('active') : document.getElementById('lamp-gl-3').classList.remove('active');
+        
+        let bClosed = !s3.fOn;
+        document.getElementById('grp-flicker-b').setAttribute('transform', s3.fOn ? 'translate(-12, 0)' : 'translate(0, 0)');
+        let pFroutB = bClosed; toggle('#grp-flicker-b .contact', pFroutB); toggle('#s-4 .c3-p-frout-b', pFroutB);
+        pFroutB ? document.getElementById('lamp-rl-3').classList.add('active') : document.getElementById('lamp-rl-3').classList.remove('active');
+    }
+
+    // 초기화
+    window.onload = () => {
+        loadRandomQuiz();
+        ev1(); evI(); ev2(); ev3();
+    };
+    </script>
+</body>
+</html>
